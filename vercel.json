@@ -15,7 +15,6 @@
   "env": {
     "PYTHONPATH": "."
   },
-  "regions": ["all"],
   "headers": [
     {
       "source": "/(.*)",
