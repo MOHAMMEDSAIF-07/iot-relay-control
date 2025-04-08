@@ -5,6 +5,8 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import logging
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,24 +17,63 @@ load_dotenv()
 
 app = Flask(__name__)
 
+# Database configuration with retry mechanism
+MAX_RETRIES = 3
+RETRY_DELAY = 1  # seconds
+
 # Database configuration
-MONGO_URI = os.getenv('MONGODB_URI', "mongodb+srv://mdsaif123:22494008@iotusingrelay.vfu72n2.mongodb.net/")
+MONGO_URI = os.getenv('MONGODB_URI')
+if not MONGO_URI:
+    logger.error("MONGODB_URI environment variable is not set!")
+    MONGO_URI = "mongodb+srv://mdsaif123:22494008@iotusingrelay.vfu72n2.mongodb.net/?retryWrites=true&w=majority"
+
 DB_NAME = os.getenv('DB_NAME', "test")
 COLLECTION_NAME = os.getenv('COLLECTION_NAME', "devices")
 
-# Initialize MongoDB connection
 def get_db():
-    try:
-        logger.info("Attempting to connect to MongoDB...")
-        mongo_client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-        # Test the connection
-        mongo_client.admin.command('ping')
-        logger.info("Successfully connected to MongoDB!")
-        database = mongo_client[DB_NAME]
-        return database[COLLECTION_NAME]
-    except Exception as e:
-        logger.error(f"MongoDB connection error: {str(e)}")
-        return None
+    """Get database connection with retry mechanism"""
+    for attempt in range(MAX_RETRIES):
+        try:
+            logger.info(f"Attempting to connect to MongoDB (attempt {attempt + 1}/{MAX_RETRIES})...")
+            # Add connection options for better reliability
+            mongo_client = pymongo.MongoClient(
+                MONGO_URI,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=5000,
+                socketTimeoutMS=5000,
+                retryWrites=True,
+                retryReads=True
+            )
+            # Test the connection
+            mongo_client.admin.command('ping')
+            logger.info("Successfully connected to MongoDB!")
+            database = mongo_client[DB_NAME]
+            collection = database[COLLECTION_NAME]
+            
+            # Initialize collection if empty
+            if collection.count_documents({}) == 0:
+                logger.info("Initializing devices collection...")
+                for led in LED_CONFIG:
+                    collection.insert_one({
+                        "name": led["name"],
+                        "pin": led["pin"],
+                        "device_type": led["device_type"],
+                        "state": False
+                    })
+                logger.info("Devices collection initialized successfully")
+            
+            return collection
+            
+        except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+            logger.error(f"MongoDB connection attempt {attempt + 1} failed: {str(e)}")
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY)
+            else:
+                logger.error("All connection attempts failed")
+                return None
+        except Exception as e:
+            logger.error(f"Unexpected error during MongoDB connection: {str(e)}")
+            return None
 
 # Define the LED configuration
 LED_CONFIG = [
@@ -177,6 +218,34 @@ def update_all_names():
     except Exception as e:
         logger.error(f"Error in update_all_names: {str(e)}")
         return jsonify({"error": "Failed to update device names"}), 500
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint"""
+    try:
+        device_collection = get_db()
+        if device_collection is None:
+            return jsonify({
+                "status": "error",
+                "message": "Database connection failed",
+                "mongo_uri": MONGO_URI.replace(MONGO_URI.split('@')[0], '***')  # Hide credentials
+            }), 500
+        
+        # Test database operations
+        count = device_collection.count_documents({})
+        return jsonify({
+            "status": "healthy",
+            "database": "connected",
+            "device_count": count,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }), 500
 
 # This is required for Vercel
 app = app
