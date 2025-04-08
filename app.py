@@ -4,6 +4,11 @@ from bson.objectid import ObjectId
 import os
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -18,12 +23,15 @@ COLLECTION_NAME = os.getenv('COLLECTION_NAME', "devices")
 # Initialize MongoDB connection
 def get_db():
     try:
-        mongo_client = pymongo.MongoClient(MONGO_URI)
+        logger.info("Attempting to connect to MongoDB...")
+        mongo_client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        # Test the connection
         mongo_client.admin.command('ping')
+        logger.info("Successfully connected to MongoDB!")
         database = mongo_client[DB_NAME]
         return database[COLLECTION_NAME]
     except Exception as e:
-        print(f"MongoDB connection error: {e}")
+        logger.error(f"MongoDB connection error: {str(e)}")
         return None
 
 # Define the LED configuration
@@ -48,35 +56,52 @@ def add_header(response):
 @app.route('/')
 def index():
     """Render the main control page"""
-    device_collection = get_db()
-    if device_collection is None:
-        return render_template('index.html', devices=[], error="Database connection failed")
-    devices = list(device_collection.find())
-    response = make_response(render_template('index.html', devices=devices))
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    return response
+    try:
+        device_collection = get_db()
+        if device_collection is None:
+            logger.error("Failed to connect to MongoDB")
+            return render_template('index.html', 
+                                devices=[], 
+                                error="Unable to connect to the database. Please try again later.")
+        
+        devices = list(device_collection.find())
+        logger.info(f"Successfully retrieved {len(devices)} devices")
+        response = make_response(render_template('index.html', devices=devices))
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+        return response
+    except Exception as e:
+        logger.error(f"Error in index route: {str(e)}")
+        return render_template('index.html', 
+                             devices=[], 
+                             error="An unexpected error occurred. Please try again later.")
 
 @app.route('/api/devices', methods=['GET'])
 def get_devices():
     """API endpoint to get all devices"""
-    device_collection = get_db()
-    if device_collection is None:
-        return jsonify({"error": "Database connection failed"}), 500
-    devices = list(device_collection.find())
-    # Convert ObjectId to string for JSON serialization
-    for device in devices:
-        device['_id'] = str(device['_id'])
-    return jsonify(devices)
+    try:
+        device_collection = get_db()
+        if device_collection is None:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        devices = list(device_collection.find())
+        # Convert ObjectId to string for JSON serialization
+        for device in devices:
+            device['_id'] = str(device['_id'])
+        return jsonify(devices)
+    except Exception as e:
+        logger.error(f"Error in get_devices: {str(e)}")
+        return jsonify({"error": "Failed to retrieve devices"}), 500
 
 @app.route('/api/toggle/<device_id>', methods=['POST'])
 def toggle_device(device_id):
     """Toggle the state of an LED"""
-    device_collection = get_db()
-    if device_collection is None:
-        return jsonify({"error": "Database connection failed"}), 500
     try:
+        device_collection = get_db()
+        if device_collection is None:
+            return jsonify({"error": "Database connection failed"}), 500
+        
         # Find the device
         device = device_collection.find_one({"_id": ObjectId(device_id)})
         if not device:
@@ -94,15 +119,17 @@ def toggle_device(device_id):
         
         return jsonify({"success": True, "device_id": device_id, "state": new_state})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error in toggle_device: {str(e)}")
+        return jsonify({"error": "Failed to toggle device"}), 500
 
 @app.route('/api/update/<device_id>', methods=['POST'])
 def update_device(device_id):
     """Update the state of an LED to a specific value"""
-    device_collection = get_db()
-    if device_collection is None:
-        return jsonify({"error": "Database connection failed"}), 500
     try:
+        device_collection = get_db()
+        if device_collection is None:
+            return jsonify({"error": "Database connection failed"}), 500
+        
         data = request.json
         new_state = data.get('state', False)
         
@@ -114,15 +141,17 @@ def update_device(device_id):
         
         return jsonify({"success": True, "device_id": device_id, "state": new_state})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error in update_device: {str(e)}")
+        return jsonify({"error": "Failed to update device"}), 500
 
 @app.route('/api/update-all-names', methods=['GET'])
 def update_all_names():
     """Update all device names to ensure they are LED 1, LED 2, etc."""
-    device_collection = get_db()
-    if device_collection is None:
-        return jsonify({"error": "Database connection failed"}), 500
     try:
+        device_collection = get_db()
+        if device_collection is None:
+            return jsonify({"error": "Database connection failed"}), 500
+        
         # Get all devices
         devices = list(device_collection.find())
         
@@ -146,7 +175,11 @@ def update_all_names():
         
         return jsonify({"success": True, "updated_count": updated_count})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error in update_all_names: {str(e)}")
+        return jsonify({"error": "Failed to update device names"}), 500
+
+# This is required for Vercel
+app = app
 
 if __name__ == '__main__':
     # Only attempt to initialize database if connection was successful
