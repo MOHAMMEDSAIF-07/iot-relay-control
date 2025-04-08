@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raspberry Pi LED Control</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #3498db;
+            --primary-dark: #2980b9;
+            --success: #2ecc71;
+            --success-dark: #27ae60;
+            --danger: #e74c3c;
+            --danger-dark: #c0392b;
+            --warning: #f39c12;
+            --warning-dark: #e67e22;
+            --purple: #9b59b6;
+            --purple-dark: #8e44ad;
+            --light: #f5f5f5;
+            --dark: #333;
+            --gray: #7f8c8d;
+            --shadow: rgba(0, 0, 0, 0.1);
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e2e7ed 100%);
+            color: var(--dark);
+            min-height: 100vh;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%);
+            color: white;
+            padding: 1.5rem 0;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            text-align: center;
+        }
+        
+        h1 {
+            font-weight: 700;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.5px;
+        }
+        
+        .subtitle {
+            color: rgba(255,255,255,0.8);
+            font-size: 1.1rem;
+            font-weight: 300;
+            margin-bottom: 0.5rem;
+        }
+        
+        .control-panel {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .button-row {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .btn {
+            padding: 0.8rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0,0,0,0.15);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn-primary {
+            background-color: var(--primary);
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+        }
+        
+        .btn-success {
+            background-color: var(--success);
+        }
+        
+        .btn-success:hover {
+            background-color: var(--success-dark);
+        }
+        
+        .btn-danger {
+            background-color: var(--danger);
+        }
+        
+        .btn-danger:hover {
+            background-color: var(--danger-dark);
+        }
+        
+        .btn-purple {
+            background-color: var(--purple);
+        }
+        
+        .btn-purple:hover {
+            background-color: var(--purple-dark);
+        }
+        
+        .device-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .device-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            text-align: center;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(0,0,0,0.05);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .device-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        }
+        
+        .device-card h2 {
+            font-size: 1.4rem;
+            margin: 1rem 0 0.5rem;
+            color: var(--dark);
+        }
+        
+        .led-indicator {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            margin: 0 auto;
+            background-color: #e0e0e0;
+            position: relative;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border: 6px solid #f1f1f1;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.1);
+        }
+        
+        .led-indicator::after {
+            content: "";
+            position: absolute;
+            top: 15%;
+            left: 15%;
+            width: 25%;
+            height: 25%;
+            border-radius: 50%;
+            background-color: rgba(255,255,255,0.7);
+            opacity: 0.8;
+        }
+        
+        .led-on {
+            background: radial-gradient(circle, #ffdd4b 0%, #ff9800 70%);
+            box-shadow: 0 0 30px rgba(255, 152, 0, 0.7), 
+                        inset 0 0 15px rgba(255, 255, 255, 0.4);
+            border-color: #ffd04a;
+        }
+        
+        .status {
+            margin: 1rem 0;
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: var(--gray);
+        }
+        
+        .status-on {
+            color: var(--success);
+        }
+        
+        .pin-info {
+            font-size: 0.9rem;
+            color: var(--gray);
+            margin-bottom: 1rem;
+            padding: 6px 10px;
+            background-color: rgba(0,0,0,0.03);
+            border-radius: 4px;
+            display: inline-block;
+        }
+        
+        .error-message {
+            background-color: #fdeaea;
+            border-left: 4px solid var(--danger);
+            color: var(--danger-dark);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 1.5rem;
+            margin-top: 2rem;
+            font-size: 0.9rem;
+            color: var(--gray);
+            background-color: rgba(255,255,255,0.7);
+            border-top: 1px solid rgba(0,0,0,0.05);
+        }
+        
+        @media (max-width: 768px) {
+            .device-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .device-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .button-row {
+                flex-direction: column;
+            }
+            
+            .button-row .btn {
+                width: 100%;
+            }
+            
+            h1 {
+                font-size: 1.75rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1><i class="fas fa-microchip"></i> Raspberry Pi LED Control Panel</h1>
+            <p class="subtitle">Manage your connected LEDs through relay module with ease</p>
+            {% if error %}
+            <div class="error-message">
+                <i class="fas fa-exclamation-triangle"></i> Error: {{ error }}
+                <br>
+                <small>Please check your MongoDB connection and restart the application.</small>
+            </div>
+            {% endif %}
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="control-panel">
+            <div class="button-row">
+                <button class="btn btn-primary" onclick="refreshStatus()">
+                    <i class="fas fa-sync-alt"></i> Refresh Status
+                </button>
+                <button class="btn btn-success" onclick="turnAllOn()">
+                    <i class="fas fa-power-off"></i> Turn All ON
+                </button>
+                <button class="btn btn-danger" onclick="turnAllOff()">
+                    <i class="fas fa-power-off"></i> Turn All OFF
+                </button>
+            </div>
+
+            {% if error %}
+            <div class="error-message">
+                <i class="fas fa-exclamation-circle"></i>
+                {{ error }}
+                <div class="error-details">
+                    <small>Try refreshing the page or check the server logs for more information.</small>
+                </div>
+            </div>
+            {% else %}
+            <div class="device-grid">
+                {% for device in devices %}
+                <div class="device-card" id="device-{{ device._id }}">
+                    <div class="led-indicator {% if device.state %}led-on{% endif %}"></div>
+                    <h2>{{ device.name }}</h2>
+                    <div class="pin-info">GPIO Pin: {{ device.pin }}</div>
+                    <p class="status {% if device.state %}status-on{% endif %}">
+                        Status: {{ 'ON' if device.state else 'OFF' }}
+                    </p>
+                    <button class="btn {% if device.state %}btn-danger{% else %}btn-success{% endif %}"
+                            onclick="toggleDevice('{{ device._id }}')">
+                        <i class="fas fa-power-off"></i>
+                        {{ 'Turn OFF' if device.state else 'Turn ON' }}
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <footer>
+        <p>© 2024 Raspberry Pi LED Control Panel. All rights reserved.</p>
+    </footer>
+
+    <script>
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.innerHTML = `
+                <i class="fas fa-exclamation-circle"></i>
+                ${message}
+                <div class="error-details">
+                    <small>Try refreshing the page or check the server logs for more information.</small>
+                </div>
+            `;
+            document.querySelector('.control-panel').prepend(errorDiv);
+            setTimeout(() => errorDiv.remove(), 5000); // Remove after 5 seconds
+        }
+
+        async function toggleDevice(deviceId) {
+            try {
+                const response = await fetch(`/api/toggle/${deviceId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to toggle device');
+                }
+
+                const data = await response.json();
+                updateDeviceUI(deviceId, data.state);
+            } catch (error) {
+                showError('Failed to toggle device. Please try again.');
+                console.error('Error:', error);
+            }
+        }
+
+        async function turnAllOn() {
+            const devices = document.querySelectorAll('.device-card');
+            for (const device of devices) {
+                const deviceId = device.id.replace('device-', '');
+                try {
+                    const response = await fetch(`/api/update/${deviceId}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ state: true })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to turn on device');
+                    }
+
+                    updateDeviceUI(deviceId, true);
+                } catch (error) {
+                    showError(`Failed to turn on device ${deviceId}`);
+                    console.error('Error:', error);
+                }
+            }
+        }
+
+        async function turnAllOff() {
+            const devices = document.querySelectorAll('.device-card');
+            for (const device of devices) {
+                const deviceId = device.id.replace('device-', '');
+                try {
+                    const response = await fetch(`/api/update/${deviceId}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ state: false })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to turn off device');
+                    }
+
+                    updateDeviceUI(deviceId, false);
+                } catch (error) {
+                    showError(`Failed to turn off device ${deviceId}`);
+                    console.error('Error:', error);
+                }
+            }
+        }
+
+        async function refreshStatus() {
+            try {
+                const response = await fetch('/api/devices');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch devices');
+                }
+
+                const devices = await response.json();
+                devices.forEach(device => {
+                    updateDeviceUI(device._id, device.state);
+                });
+            } catch (error) {
+                showError('Failed to refresh device status');
+                console.error('Error:', error);
+            }
+        }
+
+        function updateDeviceUI(deviceId, state) {
+            const deviceCard = document.getElementById(`device-${deviceId}`);
+            if (!deviceCard) return;
+
+            const ledIndicator = deviceCard.querySelector('.led-indicator');
+            const statusText = deviceCard.querySelector('.status');
+            const toggleButton = deviceCard.querySelector('.btn');
+
+            if (state) {
+                ledIndicator.classList.add('led-on');
+                statusText.classList.add('status-on');
+                statusText.textContent = 'Status: ON';
+                toggleButton.classList.remove('btn-success');
+                toggleButton.classList.add('btn-danger');
+                toggleButton.innerHTML = '<i class="fas fa-power-off"></i> Turn OFF';
+            } else {
+                ledIndicator.classList.remove('led-on');
+                statusText.classList.remove('status-on');
+                statusText.textContent = 'Status: OFF';
+                toggleButton.classList.remove('btn-danger');
+                toggleButton.classList.add('btn-success');
+                toggleButton.innerHTML = '<i class="fas fa-power-off"></i> Turn ON';
+            }
+        }
+
+        // Refresh status every 30 seconds
+        setInterval(refreshStatus, 30000);
+    </script>
+</body>
+</html> 
