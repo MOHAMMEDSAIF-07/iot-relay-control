@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import logging
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 import time
+import urllib.parse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,13 +23,25 @@ MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
 
 # Database configuration
-MONGO_URI = os.getenv('MONGODB_URI')
-if not MONGO_URI:
-    logger.error("MONGODB_URI environment variable is not set!")
-    MONGO_URI = "mongodb+srv://mdsaif123:22494008@iotusingrelay.vfu72n2.mongodb.net/?retryWrites=true&w=majority"
+username = "mdsaif123"
+password = "22494008"
+cluster = "iotusingrelay.vfu72n2.mongodb.net"
+encoded_username = urllib.parse.quote_plus(username)
+encoded_password = urllib.parse.quote_plus(password)
 
-DB_NAME = os.getenv('DB_NAME', "test")
-COLLECTION_NAME = os.getenv('COLLECTION_NAME', "devices")
+MONGO_URI = f"mongodb+srv://{encoded_username}:{encoded_password}@{cluster}/test?retryWrites=true&w=majority"
+DB_NAME = "test"
+COLLECTION_NAME = "devices"
+
+logger.info(f"Connecting to database: {DB_NAME}, collection: {COLLECTION_NAME}")
+
+# Define the LED configuration
+LED_CONFIG = [
+    {"name": "LED 1", "pin": 17, "device_type": "led 1"},
+    {"name": "LED 2", "pin": 27, "device_type": "led 2"},
+    {"name": "LED 3", "pin": 22, "device_type": "led 3"},
+    {"name": "LED 4", "pin": 18, "device_type": "led 4"}
+]
 
 def get_db():
     """Get database connection with retry mechanism"""
@@ -38,17 +51,20 @@ def get_db():
             # Add connection options for better reliability
             mongo_client = pymongo.MongoClient(
                 MONGO_URI,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=5000,
-                socketTimeoutMS=5000,
+                serverSelectionTimeoutMS=10000,
+                connectTimeoutMS=10000,
+                socketTimeoutMS=10000,
+                maxPoolSize=1,
                 retryWrites=True,
                 retryReads=True
             )
-            # Test the connection
-            mongo_client.admin.command('ping')
-            logger.info("Successfully connected to MongoDB!")
+            
+            # Test the connection explicitly
             database = mongo_client[DB_NAME]
             collection = database[COLLECTION_NAME]
+            # Perform a simple operation to test the connection
+            collection.find_one({})
+            logger.info("Successfully connected to MongoDB!")
             
             # Initialize collection if empty
             if collection.count_documents({}) == 0:
@@ -75,14 +91,6 @@ def get_db():
             logger.error(f"Unexpected error during MongoDB connection: {str(e)}")
             return None
 
-# Define the LED configuration
-LED_CONFIG = [
-    {"name": "LED 1", "pin": 17, "device_type": "led 1"},
-    {"name": "LED 2", "pin": 27, "device_type": "led 2"},
-    {"name": "LED 3", "pin": 22, "device_type": "led 3"},
-    {"name": "LED 4", "pin": 18, "device_type": "led 4"}
-]
-
 @app.after_request
 def add_header(response):
     # Add caching headers for static content
@@ -100,23 +108,32 @@ def index():
     try:
         device_collection = get_db()
         if device_collection is None:
-            logger.error("Failed to connect to MongoDB")
+            error_msg = "Unable to connect to the database. Please ensure MongoDB is running and accessible."
+            logger.error(error_msg)
             return render_template('index.html', 
                                 devices=[], 
-                                error="Unable to connect to the database. Please try again later.")
+                                error=error_msg)
         
-        devices = list(device_collection.find())
-        logger.info(f"Successfully retrieved {len(devices)} devices")
-        response = make_response(render_template('index.html', devices=devices))
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-        response.headers['X-XSS-Protection'] = '1; mode=block'
-        return response
+        try:
+            devices = list(device_collection.find())
+            logger.info(f"Successfully retrieved {len(devices)} devices")
+            response = make_response(render_template('index.html', devices=devices))
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+            response.headers['X-XSS-Protection'] = '1; mode=block'
+            return response
+        except Exception as e:
+            error_msg = f"Error retrieving devices: {str(e)}"
+            logger.error(error_msg)
+            return render_template('index.html', 
+                                devices=[], 
+                                error=error_msg)
     except Exception as e:
-        logger.error(f"Error in index route: {str(e)}")
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.error(error_msg)
         return render_template('index.html', 
                              devices=[], 
-                             error="An unexpected error occurred. Please try again later.")
+                             error=error_msg)
 
 @app.route('/api/devices', methods=['GET'])
 def get_devices():
